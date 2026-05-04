@@ -9,13 +9,14 @@ import subprocess
 import threading
 import requests
 import textwrap
+import select
 from luma.core.interface.serial import spi
 from luma.lcd.device import st7735
 from luma.core.render import canvas
 from evdev import InputDevice, ecodes, list_devices
 
 # --- CONFIGURATION ---
-API_KEY = "Nope"
+API_KEY = "85a3f31e454468a41cef0e1a05bdd76f"
 CITY = "Ames,US" 
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25)
 device = st7735(serial, width=160, height=128, rotate=1)
@@ -113,73 +114,137 @@ def execute_cmd(command):
         terminal_history.extend(textwrap.wrap(f"Error: {str(e)}", width=CHAR_LIMIT))
 
 def find_keyboard():
-    try:
-        dev = InputDevice('/dev/input/event0')
-        return dev
-    except Exception as e:
+    candidates = []
+
+    for path in list_devices():
+        try:
+            dev = InputDevice(path)
+
+            bad_names = ["pwr_button", "vc4-hdmi"]
+            if any(bad in dev.name.lower() for bad in bad_names):
+                continue
+
+            caps = dev.capabilities()
+            if ecodes.EV_KEY not in caps:
+                continue
+
+            keys = caps[ecodes.EV_KEY]
+
+            required_keys = [
+                ecodes.KEY_A,
+                ecodes.KEY_Z,
+                ecodes.KEY_ENTER,
+                ecodes.KEY_BACKSPACE,
+                ecodes.KEY_SPACE,
+            ]
+
+            if all(k in keys for k in required_keys):
+                candidates.append((path, dev))
+
+        except Exception:
+            continue
+
+    if not candidates:
         return None
+
+    candidates.sort(key=lambda item: int(item[0].replace("/dev/input/event", "")))
+    return candidates[0][1]
 
 def keyboard_worker():
     global MODE, cmd_buffer, scroll_offset, kbd_connected
-    grabbed = False
+
     while True:
         kbd = find_keyboard()
+
         if kbd is None:
             if kbd_connected:
                 kbd_connected = False
                 MODE = "DASHBOARD"
-            time.sleep(2)
+            time.sleep(1)
             continue
+
+        kbd_path = kbd.path
+
         if not kbd_connected:
             kbd_connected = True
             MODE = "TERMINAL"
+
         grabbed = False
+
         try:
             kbd.grab()
             grabbed = True
-        except Exception as e:
+        except Exception:
             pass
+
         try:
-            for event in kbd.read_loop():
-                if event.type != ecodes.EV_KEY:
+            while True:
+                # If the keyboard device disappeared, go back to dashboard
+                if kbd_path not in list_devices():
+                    kbd_connected = False
+                    MODE = "DASHBOARD"
+                    break
+
+                # Wait up to 0.5s for a key event, then re-check connection
+                r, _, _ = select.select([kbd.fd], [], [], 0.5)
+
+                if not r:
                     continue
-                if event.value not in (1, 2):
-                    continue
-                if event.code == ecodes.KEY_F12:
-                    MODE = "DASHBOARD" if MODE == "TERMINAL" else "TERMINAL"
-                    continue
-                if MODE != "TERMINAL":
-                    continue
-                if event.code not in key_map:
-                    continue
-                v = key_map[event.code]
-                if v == "UP":
-                    scroll_offset = min(scroll_offset + 1, max(0, len(terminal_history) - 11))
-                    continue
-                elif v == "DOWN":
-                    scroll_offset = max(scroll_offset - 1, 0)
-                    continue
-                elif v == "ENTER":
-                    if cmd_buffer.strip():
-                        terminal_history.append(f"> {cmd_buffer}")
-                        execute_cmd(cmd_buffer)
-                        cmd_buffer = ""
-                        scroll_offset = 0
-                elif v == "BACK":
-                    cmd_buffer = cmd_buffer[:-1]
-                else:
-                    if len(cmd_buffer) < 40:
-                        cmd_buffer += v
-        except OSError as e:
-            pass
-        except Exception as e:
-            pass
+
+                for event in kbd.read():
+                    if event.type != ecodes.EV_KEY:
+                        continue
+
+                    if event.value not in (1, 2):
+                        continue
+
+                    if event.code == ecodes.KEY_F12:
+                        MODE = "DASHBOARD" if MODE == "TERMINAL" else "TERMINAL"
+                        continue
+
+                    if MODE != "TERMINAL":
+                        continue
+
+                    if event.code not in key_map:
+                        continue
+
+                    v = key_map[event.code]
+
+                    if v == "UP":
+                        scroll_offset = min(scroll_offset + 1, max(0, len(terminal_history) - 11))
+
+                    elif v == "DOWN":
+                        scroll_offset = max(scroll_offset - 1, 0)
+
+                    elif v == "ENTER":
+                        if cmd_buffer.strip():
+                            terminal_history.append(f"> {cmd_buffer}")
+                            execute_cmd(cmd_buffer)
+                            cmd_buffer = ""
+                            scroll_offset = 0
+
+                    elif v == "BACK":
+                        cmd_buffer = cmd_buffer[:-1]
+
+                    else:
+                        if len(cmd_buffer) < 40:
+                            cmd_buffer += v
+
+        except OSError:
+            kbd_connected = False
+            MODE = "DASHBOARD"
+
+        except Exception:
+            kbd_connected = False
+            MODE = "DASHBOARD"
+
         finally:
             if grabbed:
                 try:
                     kbd.ungrab()
                 except Exception:
                     pass
+
         time.sleep(1)
 
 # Start the thread
