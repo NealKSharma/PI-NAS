@@ -14,11 +14,11 @@ Basically: my own mini cloud, but sitting on my desk and fully under my control.
 
 | Open Media Vault | Syncthing |
 |---|---|
-| <img width="300" alt="Open Media Vault" src="Pictures/omv.png" /> | <img width="300" alt="Syncthing" src="Pictures/syncthing.png" /> |
+| <img width="600" alt="Open Media Vault" src="Pictures/omv.png" /> | <img width="600" alt="Syncthing" src="Pictures/syncthing.png" /> |
 
 | Tailscale | 3D Model |
 |---|---|
-| <img width="300" alt="Tailscale" src="Pictures/tailscale.png" /> | <img width="300" alt="3D Model" src="Pictures/model.png" /> |
+| <img width="600" alt="Tailscale" src="Pictures/tailscale.png" /> | <img width="600" alt="3D Model" src="Pictures/model.png" /> |
 
 | Case | Inside |
 |---|---|

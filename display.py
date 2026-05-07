@@ -16,7 +16,7 @@ from luma.core.render import canvas
 from evdev import InputDevice, ecodes, list_devices
 
 # --- CONFIGURATION ---
-API_KEY = "85a3f31e454468a41cef0e1a05bdd76f"
+API_KEY = "nope"
 CITY = "Ames,US" 
 serial = spi(port=0, device=0, gpio_DC=24, gpio_RST=25)
 device = st7735(serial, width=160, height=128, rotate=1)
